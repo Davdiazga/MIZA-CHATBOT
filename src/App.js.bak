@@ -1,0 +1,334 @@
+import React, { useState } from "react";
+
+// Colores del tema Blue Glass (Minimalista)
+const BLUE_ACCENT = "#3572E2"; // Un azul vibrante y moderno
+
+function speak(text) {
+  const msg = new SpeechSynthesisUtterance(text);
+  msg.lang = "es-CO";
+  msg.pitch = 1;
+  msg.rate = 1;
+  window.speechSynthesis.speak(msg);
+}
+// --- FUNCIÓN PARA CONSULTAR A LA IA (GEMINI) ---
+async function getAIResponse(prompt, userName, visitedPlaces) {
+  try {
+    const placesInfo = visitedPlaces && visitedPlaces.length > 0
+      ? `El usuario ya ha visitado o conoce estos lugares: ${visitedPlaces.join(", ")}. No recomiendes estos lugares.`
+      : "";
+
+    const userGreeting = userName ? `El usuario se llama ${userName}. ` : "";
+    
+    // Enviar solo la información esencial al servidor
+    const fullPrompt = `${userGreeting}${placesInfo}\n\nPregunta: ${prompt}`;
+
+    const response = await fetch("http://localhost:3001/api/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: fullPrompt })
+    });
+
+    if (!response.ok) {
+      console.log("❌ Error en el servidor:", response.status);
+      return "⚠️ El servidor no respondió correctamente.";
+    }
+
+    const data = await response.json();
+
+    // Validar si existe respuesta
+    if (!data || !data.reply) {
+      return "😕 No hubo respuesta del modelo.";
+    }
+
+    return data.reply;
+  } catch (error) {
+    console.log("Error al conectar:", error);
+    return "🚫 No pude conectarme al servidor.";
+  }
+}
+
+export default function App() {
+  const [messages, setMessages] = useState([
+    { from: "bot", text: "🌟 ¡Hola! Soy MIZA, tu guía turístico virtual de Manizales. Puedo recomendarte lugares, comidas, rutas y clima ☕️🏞️" }
+  ]);
+  const [input, setInput] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [typingText, setTypingText] = useState("");
+  const [darkMode, setDarkMode] = useState(false);
+  const [userName, setUserName] = useState("");
+  const [visitedPlaces, setVisitedPlaces] = useState([]);
+
+  const handleSend = async (customPrompt) => {
+    const text = customPrompt || input;
+    if (!text.trim()) return;
+
+    // Detectar si el usuario menciona su nombre (ej: "Me llamo Juan", "Soy María")
+    const nameMatch = text.match(/(?:me llamo|soy|mi nombre es)\s+(\w+)/i);
+    const detectedName = nameMatch?.[1];
+
+    // Prepare el nombre que se usará ahora (no confiar en el setState inmediato)
+    const currentName = userName || detectedName || "";
+    if (detectedName && !userName) {
+      setUserName(detectedName);
+    }
+
+    // Detectar lugares visitados mencionados (palabras clave: "visité", "estuve en", "ya conocí")
+    const placeMatch = text.match(/(?:visité|estuve en|ya conocí|ya visité|fui a|conozco)\s+([a-zA-Záéíóúñ\s]+?)(?:\.|,|$)/i);
+    let newVisited = [...visitedPlaces];
+    if (placeMatch) {
+      const place = placeMatch[1].trim();
+      if (!newVisited.includes(place)) {
+        newVisited.push(place);
+        setVisitedPlaces(newVisited);
+      }
+    }
+
+    const newMessages = [...messages, { from: "user", text }];
+    setMessages(newMessages);
+    setInput("");
+    setLoading(true);
+    setTypingText("✍️ MIZA está escribiendo...");
+
+    // Pasar la información actualizada al prompt (nombre + lugares visitados)
+    const reply = await getAIResponse(text, currentName, newVisited);
+    const safeReply = reply || "😕 No hubo respuesta.";
+    setTypingText("");
+
+  
+   
+
+    let typed = "";
+    for (let char of safeReply) {
+      typed += char;
+      setTypingText(typed);
+      await new Promise((res) => setTimeout(res, 25));
+    }
+
+    setMessages([...newMessages, { from: "bot", text: safeReply }]);
+    setTypingText("");
+    setLoading(false);
+
+    // Activar síntesis de voz
+    speak(safeReply);
+  };
+
+  const handleVoiceInput = () => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      alert("Tu navegador no soporta reconocimiento de voz 😢");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "es-ES";
+    recognition.continuous = false;
+
+    recognition.onstart = () => setTypingText("🎙️ Escuchando...");
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      setTypingText("");
+      setInput(transcript);
+      handleSend(transcript);
+    };
+    recognition.onerror = () => {
+      setTypingText("");
+      alert("Ocurrió un error al reconocer tu voz 😢");
+    };
+
+    recognition.start();
+  };
+
+  const preguntasSugeridas = [
+    "Recomiéndame lugares turísticos en Manizales",
+    "¿Qué rutas puedo hacer para caminar y conocer la ciudad?",
+    "Sugiere restaurantes o comidas típicas de Manizales",
+    "Dime el clima actual y pronóstico para hoy",
+    "Lugares para visitar con niños o familia",
+    "Recomiéndame cafés o lugares con buena vista",
+    "Actividades culturales o eventos en Manizales",
+    "Lugares para fotografía o paisajes",
+    "Planes económicos para turistas",
+    "Consejos para movilizarse por la ciudad",
+    "Recomendaciones para fines de semana",
+    "Rutas de senderismo cerca de Manizales",
+    "Qué hacer en temporada de lluvias",
+    "Lugares históricos e iglesias importantes",
+    "Eventos gastronómicos o ferias locales"
+  ];
+
+  return (
+    <div
+      style={{
+        height: "100vh",
+        width: "100vw",
+        display: "flex",
+        background: darkMode
+          ? "linear-gradient(135deg, #232526,  #000000)" // Modo Oscuro: 
+          : "linear-gradient(135deg, #E3F2FD, #BBDEFB)", // Modo Claro: A
+        fontFamily: "'Poppins', sans-serif",
+        padding: "30px",
+        boxSizing: "border-box",
+        gap: "30px",
+        transition: "0.5s ease"
+      }}
+    >
+      {/* PANEL IZQUIERDO */}
+      <div
+        style={{
+          width: "300px",
+          background: "rgba(255, 255, 255, 0.7)", 
+          borderRadius: "25px",
+          padding: "20px",
+          boxShadow: "0 8px 20px rgba(0,0,0,0.15)",
+          display: "flex",
+          flexDirection: "column",
+          backdropFilter: "blur(10px)"
+        }}
+      >
+        <div style={{ textAlign: "center" }}>
+          <img
+            src="/MIZA.jpg"
+            alt="MIZA"
+            style={{ width: "150px", borderRadius: "50%", marginBottom: "10px", objectFit: "cover" }}
+          />
+          <h2 style={{ color: BLUE_ACCENT, fontSize: "24px", margin: 0 }}> MIZA Guía Turística</h2>
+        </div>        <div
+          style={{
+            flex: 1,
+            overflowY: "auto",
+            marginTop: "15px",
+            display: "flex",
+            flexDirection: "column",
+            gap: "10px"
+          }}
+        >
+          {preguntasSugeridas.map((p, i) => (
+            <button
+              key={i}
+              onClick={() => handleSend(p)}
+              style={{
+                textAlign: "left",
+                padding: "12px",
+                borderRadius: "15px",
+                border: `2px solid ${BLUE_ACCENT}50`, // Borde azul claro
+                background: "rgba(255, 255, 255, 0.9)", // Fondo blanco claro
+                cursor: "pointer",
+                fontSize: "16px",
+                transition: "0.3s"
+              }}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+
+        <button
+          onClick={() => setDarkMode(!darkMode)}
+          style={{
+            marginTop: "15px",
+            padding: "10px",
+            borderRadius: "15px",
+            border: "none",
+            background: darkMode ? BLUE_ACCENT : "#f0f0f0", // Botón de Tema
+            color: darkMode ? "#fff" : BLUE_ACCENT,
+            fontSize: "16px",
+            cursor: "pointer"
+          }}
+        >
+          Cambiar a {darkMode ? "☀️ Claro" : "🌙 Oscuro"}
+        </button>
+      </div>
+
+      {/* PANEL DERECHO */}
+      <div
+        style={{
+          flex: 1,
+          background: "rgba(255, 255, 255, 0.7)", 
+          borderRadius: "30px",
+          padding: "25px",
+          boxShadow: "0 10px 30px rgba(0,0,0,0.2)",
+          display: "flex",
+          flexDirection: "column",
+          backdropFilter: "blur(10px)"
+        }}
+      >
+        <h1 style={{ textAlign: "center", fontSize: "35px", color: BLUE_ACCENT }}>
+           MIZA Guía Turística
+        </h1>
+
+        <div
+          style={{
+            flex: 1,
+            border: `3px solid ${BLUE_ACCENT}30`, 
+            borderRadius: "25px",
+            padding: "20px",
+            overflowY: "auto",
+            background: "rgba(255, 255, 255, 0.5)" 
+          }}
+        >
+          {messages.map((msg, i) => (
+            <div key={i} style={{ display: "flex", justifyContent: msg.from === "user" ? "flex-end" : "flex-start" }}>
+              <div
+                style={{
+                  maxWidth: "70%",
+                  padding: "15px 20px",
+                  borderRadius: "20px",
+                  background: msg.from === "user" ? "rgba(53, 114, 226, 0.15)" : "rgba(255, 255, 255, 0.9)" // Burbujas
+                }}
+              >
+                <b>{msg.from === "user" ? "Tú" : "MIZA"}:</b> {msg.text}
+              </div>
+            </div>
+          ))}          {typingText && <div style={{ marginTop: "10px" }}>📝 {typingText}</div>}
+        </div>
+
+        {/* Input + Botones */}
+        <div style={{ marginTop: "20px", display: "flex", gap: "10px" }}>
+          <input
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            style={{
+              flex: 1,
+              padding: "18px",
+              borderRadius: "15px",
+              border: `3px solid ${BLUE_ACCENT}50`, // Borde del Input
+              fontSize: "18px"
+            }}
+            placeholder="Escribe tu pregunta sobre Manizales..."
+          />
+          <button
+            onClick={() => handleSend()}
+            style={{
+              padding: "18px 25px",
+              borderRadius: "15px",
+              background: BLUE_ACCENT, // Botón Enviar
+              color: "#fff",
+              border: "none",
+              fontSize: "18px",
+              cursor: "pointer"
+            }}
+          >
+            Enviar
+          </button>
+
+          <button
+            onClick={handleVoiceInput}
+            style={{
+              padding: "18px",
+              borderRadius: "15px",
+              background: "#f0f8ff", // Botón Voz (Azul muy claro)
+              border: "none",
+              fontSize: "20px",
+              cursor: "pointer"
+            }}
+          >
+            🎤
+          </button>
+        </div>
+      </div>
+      <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700&display=swap');
+      </style>
+    </div>
+  );
+}

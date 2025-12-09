@@ -1,0 +1,21 @@
+
+## ⚙️ Instalación
+
+### Backend
+```bash
+cd MIZA_CHATBOT
+npm install express cors node-fetch
+node server.js
+
+# En un terminal separado
+cd MIZA_CHATBOT
+npm start
+
+
+🔧 Configuración
+Obtén una API Key de Gemini en Google AI Studio
+
+Reemplaza la API Key en server.js:
+
+javascript
+const API_KEY = "TU_API_KEY_AQUI";
